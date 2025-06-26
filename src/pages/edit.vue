@@ -533,6 +533,7 @@ import {
     writeTextFile,
     exists,
     remove,
+    writeFile,
 } from '@tauri-apps/plugin-fs'
 import {
     appCacheDir,
@@ -583,6 +584,8 @@ import {
     fileLimitNumber,
     isDev,
     readStaticFile,
+    rhExeUrl,
+    base64PngToIco,
 } from '@/utils/common'
 import { arch, platform } from '@tauri-apps/plugin-os'
 import { getCurrentWindow } from '@tauri-apps/api/window'
@@ -1585,6 +1588,25 @@ const easyLocal = async () => {
         // console.log('loadingText---', loadingText)
         loadingText(loadingState)
     }, 1000)
+    // if windows, down rh.exe
+    if (platformName === 'windows') {
+        const ppExeDir: string = await invoke('get_exe_dir')
+        const rhExePath = await join(ppExeDir, 'data', 'rh.exe')
+        const downRhExe = await invoke('download_file', {
+            url: rhExeUrl,
+            savePath: rhExePath,
+            fileId: 'rh.exe',
+        })
+        console.log('downRhExe----', downRhExe)
+        // ico save to local
+        const base64String = store.currentProject.iconRound
+            ? roundIcon.value
+            : iconBase64.value
+        const icoBlob = await base64PngToIco(base64String)
+        console.log('ico', icoBlob)
+        const icoPath = await join(ppExeDir, 'data', 'app.ico')
+        await writeFile(icoPath, icoBlob)
+    }
     // build local
     // store.currentProject.isHtml && store.currentProject.htmlPath
     invoke('build_local', {
@@ -1595,8 +1617,8 @@ const easyLocal = async () => {
             platformName === 'macos'
                 ? store.currentProject.iconRound
                     ? roundIcon.value
-                    : store.currentProject.icon
-                : store.currentProject.icon,
+                    : iconBase64.value
+                : iconBase64.value,
         debug: store.currentProject.desktop.debug,
         customJs: await getInitializationScript(true),
         htmlPath: store.currentProject.htmlPath,

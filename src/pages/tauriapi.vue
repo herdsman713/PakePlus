@@ -176,8 +176,35 @@
             </el-header>
             <!-- 主内容 -->
             <el-main>
+                <!-- my info -->
+                <!-- api/template -->
+                <div v-if="menuIndex === '0-1'" class="cardContent">
+                    <h1 class="cardTitle">my info</h1>
+                    <p>Get Github information.</p>
+                    <div class="cardBox">
+                        <el-tooltip
+                            content="Github discount amount"
+                            placement="bottom"
+                        >
+                            <el-button>
+                                {{ discountAmount.toFixed(2) }}/16 $
+                            </el-button>
+                        </el-tooltip>
+                        <el-tooltip
+                            content="Github Api Limit"
+                            placement="bottom"
+                        >
+                            <el-button>
+                                {{ githubApiLimit.used }}
+                                /
+                                {{ githubApiLimit.limit }}
+                                Api
+                            </el-button>
+                        </el-tooltip>
+                    </div>
+                </div>
                 <!-- api/app -->
-                <div v-if="menuIndex === '1-1'" class="cardContent">
+                <div v-else-if="menuIndex === '1-1'" class="cardContent">
                     <h2>app</h2>
                     <p>
                         @Tauri apps/app is provided by Tauri
@@ -631,19 +658,19 @@
                     <h1 class="cardTitle">pay method</h1>
                     <p>provide pay method</p>
                     <el-button @click="getPayJsCode('weixin')">
-                        wxpay
+                        wxpay pay1
                     </el-button>
                     <el-button @click="getPayJsCode('alipay')">
-                        alipay
+                        alipay pay1
+                    </el-button>
+                    <el-button @click="getYunPayCode('weixin')">
+                        weixin pay2
+                    </el-button>
+                    <el-button @click="getZPayCode('alipay')">
+                        alipay pay2
                     </el-button>
                     <el-button @click="getPayJsCode('alipay')">
                         paypal
-                    </el-button>
-                    <el-button @click="getYunPayCode('weixin')">
-                        yun pay weixin
-                    </el-button>
-                    <el-button @click="getYunPayCode('alipay')">
-                        yun pay alipay
                     </el-button>
                 </div>
                 <!-- plugin-os api -->
@@ -900,7 +927,7 @@
             :close-on-click-modal="false"
             :close-on-press-escape="false"
             :show-close="false"
-            @close="checkYunPayStatus"
+            @close="checkPayStatus"
         >
             <div class="dialogContent">
                 <div v-if="qrCodeData" class="qrCodeBox">
@@ -966,6 +993,8 @@ import {
     payJsSignKey,
     yunPayMchid,
     yunPaySignKey,
+    zPayMchId,
+    zPaySignKey,
 } from '@/utils/common'
 import About from '@/pages/about.vue'
 import {
@@ -1056,6 +1085,7 @@ import {
 import { Window } from '@tauri-apps/api/window'
 import { useI18n } from 'vue-i18n'
 import payApi from '@/apis/pay'
+import githubApi from '@/apis/github'
 import { fetch } from '@tauri-apps/plugin-http'
 import QRCode from 'qrcode'
 import {
@@ -1071,10 +1101,23 @@ import {
 } from '@tauri-apps/plugin-os'
 import http from '@/utils/http'
 import { readFile, writeFile } from '@tauri-apps/plugin-fs'
+import { usePPStore } from '@/store'
 
 const { t } = useI18n()
 const route = useRoute()
 const router = useRouter()
+const store = usePPStore()
+
+const now = new Date()
+const currentMonth = now.getMonth() + 1
+const githubBilling = ref({})
+const discountAmount = ref(0)
+const githubApiLimit = ref({
+    limit: 0,
+    remaining: 0,
+    reset: 0,
+    used: 0,
+})
 
 const textarea = ref('')
 const image = ref()
@@ -1087,9 +1130,39 @@ const dialogVisible = ref(false)
 
 let selectedDir = ''
 
+const getGithubBilling = async () => {
+    discountAmount.value = 0
+    const response = await githubApi.getBilibiliInfo(
+        store.userInfo.login,
+        currentMonth
+    )
+    console.log('response----', response)
+    if (response.status === 200) {
+        const rateLimit = {
+            limit: response.headers['x-ratelimit-limit'],
+            remaining: response.headers['x-ratelimit-remaining'],
+            reset: response.headers['x-ratelimit-reset'],
+            used: response.headers['x-ratelimit-used'],
+        }
+        githubApiLimit.value = rateLimit
+        githubBilling.value = response.data
+        response.data.usageItems.forEach((item: any) => {
+            discountAmount.value += item.discountAmount
+        })
+        console.log('githubApiLimit----', githubApiLimit.value)
+        console.log('githubBilling----', githubBilling.value)
+        console.log('discountAmount----', discountAmount.value)
+    } else {
+        oneMessage.error('获取Github信息失败')
+    }
+}
+
 const handleMenu = (index: string) => {
     console.log('handleMenu', index)
     menuIndex.value = index
+    if (index === '0-1') {
+        getGithubBilling()
+    }
 }
 
 const goBack = () => {
@@ -1265,6 +1338,7 @@ const payTimer: any = ref(null)
 const payTime = ref(0)
 const qrCodeData = ref('111')
 const payType = ref('weixin')
+const payMethod = ref('yun')
 const payOrderNo = ref('')
 
 const startPayTime = () => {
@@ -1284,6 +1358,7 @@ const startPayTime = () => {
 const getPayJsCode = async (payMathod: string = 'weixin') => {
     // 请输入支付金额(单位:元)
     payType.value = payMathod
+    payMethod.value = 'payjs'
     let money = 10
     try {
         money = parseInt(textarea.value)
@@ -1325,6 +1400,7 @@ const getPayJsCode = async (payMathod: string = 'weixin') => {
 const getYunPayCode = async (payMathod: string = 'weixin') => {
     console.log('getYunPayCode')
     payType.value = payMathod
+    payMethod.value = 'yun'
     let money = 10
     try {
         money = parseFloat(textarea.value)
@@ -1359,6 +1435,90 @@ const getYunPayCode = async (payMathod: string = 'weixin') => {
     }
 }
 
+// get z pay code
+const getZPayCode = async (payMathod: string = 'alipay') => {
+    console.log('getZPayCode')
+    payType.value = payMathod
+    payMethod.value = 'zpay'
+    let money = 10
+    try {
+        money = parseFloat(textarea.value)
+        if (isNaN(money)) {
+            oneMessage.error('请输入正确的支付金额')
+            return
+        }
+    } catch (error) {
+        oneMessage.error('请输入正确的支付金额')
+        return
+    }
+    payOrderNo.value = 'zpay_' + Date.now()
+    const order: any = {
+        pid: zPayMchId,
+        type: payMathod,
+        out_trade_no: payOrderNo.value,
+        notify_url: 'https://juejin.cn/',
+        name: 'VIP会员',
+        money: money,
+        clientip: '192.168.1.100',
+        sign_type: 'MD5',
+    }
+    // get pay sign
+    order.sign = getPaySign(order, zPaySignKey)
+    console.log('order----', order)
+    // formData post
+    const formData = new FormData()
+    formData.append('pid', zPayMchId)
+    formData.append('type', payMathod)
+    formData.append('out_trade_no', payOrderNo.value)
+    formData.append('notify_url', 'https://juejin.cn/')
+    formData.append('name', 'VIP会员')
+    formData.append('money', money.toString())
+    formData.append('clientip', '192.168.1.100')
+    formData.append('sign_type', 'MD5')
+    formData.append('sign', getPaySign(formData, zPaySignKey))
+    const response: any = await payApi.getZPayCode2(formData)
+    console.log('response----', response)
+    if (response.status === 200 && response.data.code === 1) {
+        dialogVisible.value = true
+        startPayTime()
+        const url = await QRCode.toDataURL(response.data.payurl)
+        console.log('url', url)
+        qrCodeData.value = url
+    } else {
+        oneMessage.error('获取支付码失败')
+    }
+}
+
+// check z pay status
+const checkZPayStatus = async () => {
+    if (!payOrderNo.value) {
+        return
+    }
+    const order = {
+        act: 'order',
+        pid: zPayMchId,
+        key: zPaySignKey,
+        out_trade_no: payOrderNo.value,
+    }
+    const response: any = await payApi.checkZPayStatus(order)
+    console.log('response----', response)
+    if (response.status === 200 && response.data.code === 1) {
+        const { status } = response.data.data
+        if (status === '1') {
+            oneMessage.success('支付成功')
+        } else {
+            oneMessage.error('支付失败')
+        }
+    }
+}
+
+// check pay js status
+const checkPayJsStatus = async () => {
+    if (!payOrderNo.value) {
+        return
+    }
+}
+
 // check yun pay status
 const checkYunPayStatus = async () => {
     if (!payOrderNo.value) {
@@ -1381,6 +1541,17 @@ const checkYunPayStatus = async () => {
         }
     } else {
         oneMessage.error('获取支付状态失败')
+    }
+}
+
+// check pay status
+const checkPayStatus = async () => {
+    if (payMethod.value === 'payjs') {
+        await checkPayJsStatus()
+    } else if (payMethod.value === 'yun') {
+        await checkYunPayStatus()
+    } else if (payMethod.value === 'zpay') {
+        await checkZPayStatus()
     }
 }
 

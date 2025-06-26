@@ -785,7 +785,6 @@ pub async fn windows_build(
     base_dir: &str,
     exe_name: &str,
     config: String,
-    base64_png: String,
     custom_js: String,
     html_path: String,
 ) -> Result<(), String> {
@@ -917,7 +916,7 @@ pub async fn build_local(
     man_json["debug"] = serde_json::to_value(debug).unwrap();
     #[cfg(target_os = "windows")]
     {
-        man_json["icon"] = serde_json::to_value(base64_png).unwrap();
+        man_json["icon"] = serde_json::to_value(base64_png.replace("data:image/png;base64,", "")).unwrap();
     }
     let man_json_base64 = BASE64_STANDARD.encode(man_json.to_string());
     handle.emit("local-progress", "40").unwrap();
@@ -926,7 +925,6 @@ pub async fn build_local(
         target_dir,
         exe_name,
         man_json_base64,
-        base64_png,
         custom_js,
         html_path,
     )
